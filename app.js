@@ -8,6 +8,12 @@ const app = express();
 const port = process.env.PORT || "5000";
 
 const path = require("path");
+const session = require('express-session');
+const passport = require('passport');
+const passportLocal = require('passport-local');
+const bodyParser = require('body-parser');
+const db = require('./db');
+const cors = require('sqlite3', 'cors');
 /**
  * App Variables
  */
@@ -24,8 +30,75 @@ app.use('/img', express.static(__dirname + '/public/img'))
 /**
  *  App Configuration
  */
-// app.set("views","./views");
-// app.set("view engine", "ejs");
+
+
+
+app.use(session({
+    secret: "test",
+    resave: true,
+    saveUninitialized: true
+
+}));
+passport.use(new passportLocal.Strategy({
+    usernameField: "username",
+    passwordField: "password"
+},
+    (user, password, done) => {
+
+        db.get("select * from user where username = ? and password = ?",
+            user, password,
+            (err) => {
+                if (err)
+                    return done("invalid login or password!!!");
+                else
+                    return done(null, user);
+            });
+    }));
+passport.serializeUser((user, done) => {
+    done(null, user);
+});
+passport.deserializeUser((user, done) => {
+    done(null, user);
+});
+
+//
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+app.use(express.static('public'));
+app.use(passport.initialize());
+app.use(passport.session());
+
+//login form
+app.get('/login', (req, res) => {
+    res.sendFile(`${__dirname}/login`);
+})
+
+//login procedure
+app.post('/login', passport.authenticate("local", { failureRedirect: '/login' }),
+    (req, res) => { res.redirect('/'); });
+
+
+//registro form
+app.get('/registro', (req, res) => {
+    res.sendFile(`${__dirname}/registro`);
+});
+
+//registro procedure
+app.post('/registro', (req, res) => {
+    //{failureRedirect: '/registro'},
+    db.run("insert into user(id, username, password) values(?, ?, ?)",
+        Date.now(),
+        req.user,
+        req.body.password,
+        (err) => {
+            if (err)
+                res.send(err);
+            else
+                res.redirect("/login");
+        });
+
+});
 
 /**
  * Routes Definitions
@@ -73,15 +146,75 @@ app.get('/promo', (req, res) => {
 app.get('*', (req, res) => {
     res.status(404).send('what???');
 });
-// app.get("/", (req, res) => {
-//     res.sendFile(__dirname + '/views/index.html')
-// });
-// app.get("/facial", (req, res) => {
-//     res.sendFile(__dirname + '/views/facial.html')
-// });
-/**
- * Server Activation
- */
+
+// las rutas de database
+app.get('/', (req, res) => {
+    if (req.isAuthenticated()) {
+        db.all("select * from inventory where resp_person = ?", req.user, (err, rows) => {
+            if (err)
+                res.send(err);
+            else {
+                res.send('/rutas', {
+                    "inv_list": rows
+                });
+            }
+        });
+    } else {
+        console.log("Unauthenticated user!!!");
+        res.redirect('/login');
+    }
+});
+
+//anuncios data
+app.get('/anuncios', (req, res) => {
+    res.sendFile(`${__dirname}/anuncios`);
+})
+
+app.post('/anuncios', (req, res) => {
+    db.run("insert into inventory(id, title, resp_person) values(?, ?, ?)",
+        Date.now(),
+        req.body.title,
+        req.user,
+        (err) => {
+            if (err)
+                res.send(err);
+            else
+                res.redirect("/");
+        });
+});
+// update data
+
+app.put('/update/:id', (req, res) => {
+    db.run("update into inventory(title, resp_person) values(?, ?) where id = id_value;",
+        Date.now(),
+        req.body.title,
+        req.user,
+        (err) => {
+            if (err)
+                res.send(err);
+            else
+                res.redirect("/");
+        });
+});
+
+
+
+
+//delete data
+app.post('/delete', (req, res) => {
+    console.log(req.body.delid);
+    db.run("delete from inventory where id=?",
+        req.body.delid,
+        (err) => {
+            if (err)
+                res.send(err);
+            else
+                res.redirect("/");
+        });
+});
+
+ //* Server Activation
+ 
 if (port == null || port == "") {
     port = 5000;
 }
